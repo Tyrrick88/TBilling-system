@@ -46,7 +46,6 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { ChangeEvent, DragEvent, useCallback, useEffect, useMemo, useState } from "react";
 import {
-  clearStoredAuth,
   createInvoice as createInvoiceApi,
   createTenant as createTenantApi,
   deletePackage as deletePackageApi,
@@ -54,6 +53,7 @@ import {
   getStoredAuth,
   loadClientWorkspace,
   loadSuperWorkspace,
+  logout as logoutApi,
   reorderPackages as reorderPackagesApi,
   savePackage as savePackageApi,
   syncZeroRatedIps,
@@ -504,11 +504,11 @@ export function AdminConsole({
     : tenants.map((tenant) => Math.max(20, tenant.revenue / 16000));
 
   const loadWorkspace = useCallback(
-    async (session: AuthSession) => {
+    async () => {
       setLoadingWorkspace(true);
       try {
         if (role === "client") {
-          const workspace = await loadClientWorkspace(session.accessToken);
+          const workspace = await loadClientWorkspace(role);
           setClientOverview(workspace.overview);
           setPackages(workspace.packages);
           setSessions(workspace.sessions);
@@ -519,7 +519,7 @@ export function AdminConsole({
           setLogoPreview(workspace.logoUrl);
           setNetworkStatus(workspace.networkStatus);
         } else {
-          const workspace = await loadSuperWorkspace(session.accessToken);
+          const workspace = await loadSuperWorkspace(role);
           setTenants(workspace.tenants);
           setPlatformOverview(workspace.analytics);
           setIspConfig(workspace.ispConfig);
@@ -554,7 +554,7 @@ export function AdminConsole({
     void Promise.resolve().then(() => {
       if (cancelled) return;
       setAuth(storedAuth);
-      void loadWorkspace(storedAuth);
+      void loadWorkspace();
     });
 
     return () => {
@@ -612,7 +612,7 @@ export function AdminConsole({
               packages.findIndex((item) => item.id === editingPackageId),
             )
           : packages.length;
-        const savedPackage = await savePackageApi(auth.accessToken, nextPackage, sortOrder, editingPackageId);
+        const savedPackage = await savePackageApi(role, nextPackage, sortOrder, editingPackageId);
         setPackages((current) =>
           editingPackageId
             ? current.map((item) => (item.id === editingPackageId ? savedPackage : item))
@@ -660,7 +660,7 @@ export function AdminConsole({
     if (apiConnected && auth && reordered) {
       try {
         const synced = await reorderPackagesApi(
-          auth.accessToken,
+          role,
           reordered.map((item) => item.id),
         );
         setPackages(synced);
@@ -674,7 +674,7 @@ export function AdminConsole({
   async function removePackage(id: string) {
     if (apiConnected && auth) {
       try {
-        await deletePackageApi(auth.accessToken, id);
+        await deletePackageApi(role, id);
         setPackages((current) => current.filter((pkg) => pkg.id !== id));
         setToast("Package hidden from backend portal list.");
         return;
@@ -695,7 +695,7 @@ export function AdminConsole({
     setLogoPreview(URL.createObjectURL(file));
     if (apiConnected && auth) {
       try {
-        const upload = await uploadTenantLogo(auth.accessToken, file);
+        const upload = await uploadTenantLogo(role, file);
         setLogoPreview(upload.logoUrl);
         setToast(upload.message);
         return;
@@ -728,7 +728,7 @@ export function AdminConsole({
     const business = tenantDraft.business.trim() || "New Hotspot";
     if (apiConnected && auth) {
       try {
-        const created = await createTenantApi(auth.accessToken, tenantDraft);
+        const created = await createTenantApi(role, tenantDraft);
         setTenants((current) => [created, ...current]);
         setTenantDraft({ admin: "", business: "", location: "", plan: "KES 5,000/mo" });
         setToast(`${created.business} tenant created with a seeded admin login.`);
@@ -759,7 +759,7 @@ export function AdminConsole({
   async function toggleTenantStatus(tenant: Tenant) {
     if (apiConnected && auth) {
       try {
-        const updated = await updateTenantStatusApi(auth.accessToken, tenant);
+        const updated = await updateTenantStatusApi(role, tenant);
         setTenants((current) => current.map((item) => (item.id === tenant.id ? updated : item)));
         setToast(`${updated.business} status updated.`);
         return;
@@ -778,7 +778,7 @@ export function AdminConsole({
   async function removeTenant(tenant: Tenant) {
     if (apiConnected && auth) {
       try {
-        await deleteTenantApi(auth.accessToken, tenant.id);
+        await deleteTenantApi(role, tenant.id);
         setTenants((current) => current.filter((item) => item.id !== tenant.id));
         setToast(`${tenant.business} tenant deleted.`);
         return;
@@ -794,11 +794,11 @@ export function AdminConsole({
     setSettingsSaved(true);
     if (apiConnected && auth) {
       try {
-        const updated = await updateTenantSettingsApi(auth.accessToken, tenantSettings, zeroRating);
+        const updated = await updateTenantSettingsApi(role, tenantSettings, zeroRating);
         setTenantSettings(updated.settings);
         setZeroRating(updated.zeroRatingEnabled);
         if (updated.zeroRatingEnabled) {
-          await syncZeroRatedIps(auth.accessToken);
+          await syncZeroRatedIps(role);
         }
         setToast("Tenant settings saved to backend.");
         return;
@@ -813,7 +813,7 @@ export function AdminConsole({
   async function saveIspRules() {
     if (apiConnected && auth) {
       try {
-        const updated = await updateIspConfigApi(auth.accessToken, ispConfig);
+        const updated = await updateIspConfigApi(role, ispConfig);
         setIspConfig(updated);
         setToast("Global ISP config saved to backend.");
         return;
@@ -828,7 +828,7 @@ export function AdminConsole({
   async function generateInvoice() {
     if (apiConnected && auth) {
       try {
-        const invoice = await createInvoiceApi(auth.accessToken, invoiceDraft, tenants);
+        const invoice = await createInvoiceApi(role, invoiceDraft, tenants);
         setInvoices((current) => [invoice, ...current]);
         setToast(`${invoice.id} invoice generated.`);
         return;
@@ -850,8 +850,8 @@ export function AdminConsole({
     setToast("Invoice draft generated.");
   }
 
-  function logout() {
-    clearStoredAuth(role);
+  async function logout() {
+    await logoutApi(role);
     router.replace(loginPath);
   }
 

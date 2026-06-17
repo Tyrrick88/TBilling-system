@@ -17,6 +17,8 @@ import java.math.BigDecimal;
 import java.util.List;
 import java.util.Locale;
 import java.util.UUID;
+import org.springframework.cache.annotation.CacheEvict;
+import org.springframework.cache.annotation.Cacheable;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -47,6 +49,7 @@ public class TenantService {
   }
 
   @Transactional(readOnly = true)
+  @Cacheable(cacheNames = "tenantBySlug", key = "#slug")
   public Tenant tenantBySlug(String slug) {
     return tenants.findBySlug(slug).orElseThrow(() -> ApiException.notFound("Tenant not found"));
   }
@@ -57,6 +60,7 @@ public class TenantService {
   }
 
   @Transactional
+  @CacheEvict(cacheNames = {"tenantBySlug", "portalPackages"}, allEntries = true)
   public TenantResponse createTenant(TenantCreateRequest request) {
     String slug = normalizeSlug(request.slug());
     if (tenants.existsBySlug(slug)) {
@@ -87,6 +91,7 @@ public class TenantService {
   }
 
   @Transactional
+  @CacheEvict(cacheNames = {"tenantBySlug", "portalPackages"}, allEntries = true)
   public TenantResponse updateTenant(UUID tenantId, TenantUpdateRequest request) {
     Tenant tenant = tenants.findById(tenantId).orElseThrow(() -> ApiException.notFound("Tenant not found"));
     applyTenantUpdate(tenant, request);
@@ -94,6 +99,7 @@ public class TenantService {
   }
 
   @Transactional
+  @CacheEvict(cacheNames = {"tenantBySlug", "portalPackages"}, allEntries = true)
   public TenantResponse updateCurrentSettings(TenantSettingsRequest request) {
     Tenant tenant = tenantGuard.requireTenant();
     if (request.logoUrl() != null) tenant.logoUrl = request.logoUrl();
@@ -106,6 +112,7 @@ public class TenantService {
   }
 
   @Transactional
+  @CacheEvict(cacheNames = {"tenantBySlug", "portalPackages"}, allEntries = true)
   public TenantResponse suspendTenant(UUID tenantId) {
     Tenant tenant = tenants.findById(tenantId).orElseThrow(() -> ApiException.notFound("Tenant not found"));
     tenant.status = TenantStatus.SUSPENDED;
@@ -113,6 +120,7 @@ public class TenantService {
   }
 
   @Transactional
+  @CacheEvict(cacheNames = {"tenantBySlug", "portalPackages"}, allEntries = true)
   public void deleteTenant(UUID tenantId) {
     Tenant tenant = tenants.findById(tenantId).orElseThrow(() -> ApiException.notFound("Tenant not found"));
     tenant.status = TenantStatus.DELETED;

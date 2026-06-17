@@ -5,6 +5,8 @@ server:
 spring:
   application:
     name: tbilling-backend
+  cache:
+    type: simple
   datasource:
     url: ${DATABASE_URL:jdbc:postgresql://localhost:5432/tbilling}
     username: ${DATABASE_USERNAME:tbilling}
@@ -74,3 +76,14 @@ tbilling:
   storage:
     public-base-url: ${STORAGE_PUBLIC_BASE_URL:http://localhost:8080/uploads}
     max-logo-bytes: ${STORAGE_MAX_LOGO_BYTES:2097152}
+  security:
+    geofence:
+      enabled: ${GEOFENCE_ENABLED:false}
+      block-unknown: ${GEOFENCE_BLOCK_UNKNOWN:false}
+      allowed-countries: ${GEOFENCE_ALLOWED_COUNTRIES:KE,US}
+    rate-limit:
+      enabled: ${RATE_LIMIT_ENABLED:true}
+      auth-per-minute: ${RATE_LIMIT_AUTH_PER_MINUTE:10}
+      payment-per-minute: ${RATE_LIMIT_PAYMENT_PER_MINUTE:30}
+      api-per-minute: ${RATE_LIMIT_API_PER_MINUTE:240}
+      window-seconds: ${RATE_LIMIT_WINDOW_SECONDS:60}

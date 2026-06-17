@@ -12,8 +12,6 @@ type ApiUser = {
 };
 
 type AuthResponse = {
-  accessToken: string;
-  refreshToken: string;
   accessTokenExpiresAt: string;
   refreshTokenExpiresAt: string;
   user: ApiUser;
@@ -161,8 +159,6 @@ type LogoUploadResponse = {
 };
 
 export type AuthSession = {
-  accessToken: string;
-  refreshToken: string;
   accessTokenExpiresAt: string;
   refreshTokenExpiresAt: string;
   user: ApiUser;
@@ -307,66 +303,46 @@ export class ApiError extends Error {
   }
 }
 
-const authStorageKeys: Record<AdminRole, string> = {
-  client: "tbilling.auth.client",
-  super: "tbilling.auth.super",
-};
-
 export function getStoredAuth(role: AdminRole): AuthSession | null {
   if (typeof window === "undefined") return null;
 
-  const stored = window.localStorage.getItem(authStorageKeys[role]);
+  const stored = readCookie(`tbilling_${role}_session`);
   if (!stored) return null;
 
   try {
-    const auth = JSON.parse(stored) as AuthSession;
+    const auth = JSON.parse(atobUrl(stored)) as AuthSession;
     if (Date.parse(auth.accessTokenExpiresAt) <= Date.now()) {
-      window.localStorage.removeItem(authStorageKeys[role]);
       return null;
     }
     return auth;
   } catch {
-    window.localStorage.removeItem(authStorageKeys[role]);
     return null;
   }
 }
 
-export function clearStoredAuth(role: AdminRole) {
-  if (typeof window !== "undefined") {
-    window.localStorage.removeItem(authStorageKeys[role]);
-  }
+export async function logout(role: AdminRole) {
+  await apiFetch<void>("auth/logout", { method: "POST", role });
 }
 
 export async function login(role: AdminRole, email: string, password: string) {
   const auth = await apiFetch<AuthResponse>("auth/login", {
     method: "POST",
+    role,
     body: { email, password },
   });
 
-  const session: AuthSession = {
-    accessToken: auth.accessToken,
-    refreshToken: auth.refreshToken,
-    accessTokenExpiresAt: auth.accessTokenExpiresAt,
-    refreshTokenExpiresAt: auth.refreshTokenExpiresAt,
-    user: auth.user,
-  };
-
-  if (typeof window !== "undefined") {
-    window.localStorage.setItem(authStorageKeys[role], JSON.stringify(session));
-  }
-
-  return session;
+  return auth satisfies AuthSession;
 }
 
-export async function loadClientWorkspace(token: string): Promise<ClientWorkspace> {
+export async function loadClientWorkspace(role: AdminRole): Promise<ClientWorkspace> {
   const [overview, packages, sessions, transactions, failovers, settings, networkStatus] = await Promise.all([
-    apiFetch<OverviewResponse>("admin/overview", { token }),
-    apiFetch<PackageResponse[]>("admin/packages", { token }),
-    apiFetch<SessionResponse[]>("admin/sessions", { token }),
-    apiFetch<TransactionResponse[]>("admin/financials/transactions", { token }),
-    apiFetch<FailoverEventResponse[]>("admin/network/failovers", { token }),
-    apiFetch<TenantResponse>("admin/settings", { token }),
-    apiFetch<NetworkStatusResponse>("admin/network/status", { token }),
+    apiFetch<OverviewResponse>("admin/overview", { role }),
+    apiFetch<PackageResponse[]>("admin/packages", { role }),
+    apiFetch<SessionResponse[]>("admin/sessions", { role }),
+    apiFetch<TransactionResponse[]>("admin/financials/transactions", { role }),
+    apiFetch<FailoverEventResponse[]>("admin/network/failovers", { role }),
+    apiFetch<TenantResponse>("admin/settings", { role }),
+    apiFetch<NetworkStatusResponse>("admin/network/status", { role }),
   ]);
 
   return {
@@ -382,13 +358,13 @@ export async function loadClientWorkspace(token: string): Promise<ClientWorkspac
   };
 }
 
-export async function loadSuperWorkspace(token: string): Promise<SuperWorkspace> {
+export async function loadSuperWorkspace(role: AdminRole): Promise<SuperWorkspace> {
   const [tenants, analytics, ispConfig, errors, invoices] = await Promise.all([
-    apiFetch<TenantResponse[]>("super/tenants", { token }),
-    apiFetch<PlatformAnalyticsResponse>("super/analytics", { token }),
-    apiFetch<IspConfigResponse>("super/isp-config", { token }),
-    apiFetch<NetworkEventResponse[]>("super/error-logs", { token }),
-    apiFetch<InvoiceResponse[]>("super/billing", { token }),
+    apiFetch<TenantResponse[]>("super/tenants", { role }),
+    apiFetch<PlatformAnalyticsResponse>("super/analytics", { role }),
+    apiFetch<IspConfigResponse>("super/isp-config", { role }),
+    apiFetch<NetworkEventResponse[]>("super/error-logs", { role }),
+    apiFetch<InvoiceResponse[]>("super/billing", { role }),
   ]);
 
   const revenueLookup = new Map(
@@ -413,7 +389,7 @@ export async function loadSuperWorkspace(token: string): Promise<SuperWorkspace>
 }
 
 export async function savePackage(
-  token: string,
+  role: AdminRole,
   item: DashboardPackage,
   sortOrder: number,
   editingPackageId?: string | null,
@@ -433,7 +409,7 @@ export async function savePackage(
     editingPackageId ? `admin/packages/${editingPackageId}` : "admin/packages",
     {
       method: editingPackageId ? "PUT" : "POST",
-      token,
+      role,
       body: payload,
     },
   );
@@ -441,27 +417,27 @@ export async function savePackage(
   return mapPackage(response);
 }
 
-export async function deletePackage(token: string, packageId: string) {
-  await apiFetch<void>(`admin/packages/${packageId}`, { method: "DELETE", token });
+export async function deletePackage(role: AdminRole, packageId: string) {
+  await apiFetch<void>(`admin/packages/${packageId}`, { method: "DELETE", role });
 }
 
-export async function reorderPackages(token: string, packageIds: string[]) {
+export async function reorderPackages(role: AdminRole, packageIds: string[]) {
   const response = await apiFetch<PackageResponse[]>("admin/packages/reorder", {
     method: "PUT",
-    token,
+    role,
     body: { packageIds },
   });
   return response.map(mapPackage);
 }
 
 export async function updateTenantSettings(
-  token: string,
+  role: AdminRole,
   settings: DashboardTenantSettings,
   zeroRatingEnabled: boolean,
 ) {
   const response = await apiFetch<TenantResponse>("admin/settings", {
     method: "PUT",
-    token,
+    role,
     body: {
       locationName: settings.location,
       mpesaPaybill: settings.mpesa,
@@ -476,22 +452,22 @@ export async function updateTenantSettings(
   };
 }
 
-export async function uploadTenantLogo(token: string, file: File) {
+export async function uploadTenantLogo(role: AdminRole, file: File) {
   const formData = new FormData();
   formData.append("file", file);
   return apiFetch<LogoUploadResponse>("admin/settings/logo", {
     method: "POST",
-    token,
+    role,
     body: formData,
   });
 }
 
-export async function syncZeroRatedIps(token: string) {
-  return apiFetch<{ message: string }>("network/zero-rated-ips", { method: "PUT", token });
+export async function syncZeroRatedIps(role: AdminRole) {
+  return apiFetch<{ message: string }>("network/zero-rated-ips", { method: "PUT", role });
 }
 
 export async function createTenant(
-  token: string,
+  role: AdminRole,
   draft: { admin: string; business: string; location: string; plan: string },
 ) {
   const business = draft.business.trim() || "New Hotspot";
@@ -500,7 +476,7 @@ export async function createTenant(
   const plan = tenantPlanToBilling(draft.plan);
   const response = await apiFetch<TenantResponse>("super/tenants", {
     method: "POST",
-    token,
+    role,
     body: {
       name: business,
       businessName: business,
@@ -517,28 +493,28 @@ export async function createTenant(
   return mapTenant(response, 0);
 }
 
-export async function updateTenantStatus(token: string, tenant: DashboardTenant) {
+export async function updateTenantStatus(role: AdminRole, tenant: DashboardTenant) {
   const nextStatus = tenant.status === "ACTIVE" ? "SUSPENDED" : "ACTIVE";
   const response = await apiFetch<TenantResponse>(`super/tenants/${tenant.id}`, {
     method: "PUT",
-    token,
+    role,
     body: { status: nextStatus },
   });
 
   return mapTenant(response, tenant.revenue);
 }
 
-export async function deleteTenant(token: string, tenantId: string) {
-  await apiFetch<void>(`super/tenants/${tenantId}`, { method: "DELETE", token });
+export async function deleteTenant(role: AdminRole, tenantId: string) {
+  await apiFetch<void>(`super/tenants/${tenantId}`, { method: "DELETE", role });
 }
 
 export async function updateIspConfig(
-  token: string,
+  role: AdminRole,
   config: { threshold: string; checks: string; primary: string; backup: string; webhook: string },
 ) {
   const response = await apiFetch<IspConfigResponse>("super/isp-config", {
     method: "PUT",
-    token,
+    role,
     body: {
       primaryProvider: config.primary,
       backupProvider: config.backup,
@@ -558,7 +534,7 @@ export async function updateIspConfig(
 }
 
 export async function createInvoice(
-  token: string,
+  role: AdminRole,
   draft: { tenant: string; amount: string; due: string },
   tenants: DashboardTenant[],
 ) {
@@ -569,7 +545,7 @@ export async function createInvoice(
 
   const response = await apiFetch<InvoiceResponse>("super/billing", {
     method: "POST",
-    token,
+    role,
     body: {
       tenantId: tenant.id,
       amountKes: Number(draft.amount) || 0,
@@ -584,15 +560,15 @@ async function apiFetch<T>(
   path: string,
   options: {
     method?: string;
-    token?: string;
+    role?: AdminRole;
     body?: FormData | Record<string, unknown>;
   } = {},
 ): Promise<T> {
   const headers = new Headers({ accept: "application/json" });
   let body: BodyInit | undefined;
 
-  if (options.token) {
-    headers.set("authorization", `Bearer ${options.token}`);
+  if (options.role) {
+    headers.set("x-tbilling-role", options.role);
   }
 
   if (options.body instanceof FormData) {
@@ -607,6 +583,7 @@ async function apiFetch<T>(
     headers,
     body,
     cache: "no-store",
+    credentials: "same-origin",
   });
 
   if (response.status === 204) return undefined as T;
@@ -623,6 +600,19 @@ async function apiFetch<T>(
   }
 
   return payload as T;
+}
+
+function readCookie(name: string) {
+  return document.cookie
+    .split("; ")
+    .find((item) => item.startsWith(`${name}=`))
+    ?.split("=")[1];
+}
+
+function atobUrl(value: string) {
+  const base64 = value.replace(/-/g, "+").replace(/_/g, "/");
+  const padding = "=".repeat((4 - (base64.length % 4)) % 4);
+  return window.atob(base64 + padding);
 }
 
 function mapPackage(item: PackageResponse): DashboardPackage {

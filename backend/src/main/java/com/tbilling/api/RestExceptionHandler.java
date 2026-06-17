@@ -8,6 +8,7 @@ import java.util.Map;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.AccessDeniedException;
+import org.springframework.security.core.AuthenticationException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
@@ -27,6 +28,11 @@ public class RestExceptionHandler {
   @ExceptionHandler(AccessDeniedException.class)
   ResponseEntity<Map<String, Object>> denied(AccessDeniedException exception, HttpServletRequest request) {
     return body(HttpStatus.FORBIDDEN, exception.getMessage(), request.getRequestURI());
+  }
+
+  @ExceptionHandler(AuthenticationException.class)
+  ResponseEntity<Map<String, Object>> authentication(AuthenticationException exception, HttpServletRequest request) {
+    return body(HttpStatus.UNAUTHORIZED, "Invalid login", request.getRequestURI());
   }
 
   @ExceptionHandler(Exception.class)

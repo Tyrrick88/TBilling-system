@@ -1,6 +1,7 @@
 package com.tbilling.config;
 
 import java.time.Duration;
+import java.util.List;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
 @ConfigurationProperties(prefix = "tbilling")
@@ -10,7 +11,8 @@ public record TbillingProperties(
     Jobs jobs,
     Daraja daraja,
     Mikrotik mikrotik,
-    Storage storage) {
+    Storage storage,
+    Security security) {
 
   public record Jwt(String secret, Duration accessTtl, Duration refreshTtl) {}
 
@@ -33,4 +35,15 @@ public record TbillingProperties(
   public record Mikrotik(String host, int port, String username, String password, boolean enabled) {}
 
   public record Storage(String publicBaseUrl, long maxLogoBytes) {}
+
+  public record Security(Geofence geofence, RateLimit rateLimit) {}
+
+  public record Geofence(boolean enabled, boolean blockUnknown, List<String> allowedCountries) {}
+
+  public record RateLimit(
+      boolean enabled,
+      int authPerMinute,
+      int paymentPerMinute,
+      int apiPerMinute,
+      int windowSeconds) {}
 }

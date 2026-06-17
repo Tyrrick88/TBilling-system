@@ -1,6 +1,7 @@
 package com.tbilling.config;
 
 import com.tbilling.security.JwtAuthenticationFilter;
+import com.tbilling.security.RequestSecurityFilter;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.security.authentication.AuthenticationManager;
@@ -22,7 +23,10 @@ import org.springframework.security.web.authentication.UsernamePasswordAuthentic
 public class SecurityConfig {
   @Bean
   SecurityFilterChain securityFilterChain(
-      HttpSecurity http, JwtAuthenticationFilter jwtAuthenticationFilter, AuthenticationProvider provider)
+      HttpSecurity http,
+      RequestSecurityFilter requestSecurityFilter,
+      JwtAuthenticationFilter jwtAuthenticationFilter,
+      AuthenticationProvider provider)
       throws Exception {
     return http
         .csrf(AbstractHttpConfigurer::disable)
@@ -46,6 +50,7 @@ public class SecurityConfig {
                     .anyRequest()
                     .authenticated())
         .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class)
+        .addFilterBefore(requestSecurityFilter, JwtAuthenticationFilter.class)
         .build();
   }
 

@@ -12,6 +12,8 @@ import com.tbilling.repository.InternetPackageRepository;
 import com.tbilling.tenant.TenantGuard;
 import java.util.List;
 import java.util.UUID;
+import org.springframework.cache.annotation.CacheEvict;
+import org.springframework.cache.annotation.Cacheable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -34,6 +36,7 @@ public class PackageService {
   }
 
   @Transactional(readOnly = true)
+  @Cacheable(cacheNames = "portalPackages", key = "#tenant.slug")
   public List<PackageResponse> listPortalPackages(Tenant tenant) {
     return packages.findByTenantIdAndStatusOrderBySortOrderAscCreatedAtAsc(tenant.id, PackageStatus.ACTIVE).stream()
         .map(ResponseMapper::internetPackage)
@@ -41,6 +44,7 @@ public class PackageService {
   }
 
   @Transactional
+  @CacheEvict(cacheNames = "portalPackages", allEntries = true)
   public PackageResponse createPackage(PackageRequest request) {
     InternetPackage internetPackage = new InternetPackage();
     internetPackage.tenant = tenantGuard.requireTenant();
@@ -49,6 +53,7 @@ public class PackageService {
   }
 
   @Transactional
+  @CacheEvict(cacheNames = "portalPackages", allEntries = true)
   public PackageResponse updatePackage(UUID packageId, PackageRequest request) {
     InternetPackage internetPackage =
         packages.findById(packageId).orElseThrow(() -> ApiException.notFound("Package not found"));
@@ -58,6 +63,7 @@ public class PackageService {
   }
 
   @Transactional
+  @CacheEvict(cacheNames = "portalPackages", allEntries = true)
   public void deletePackage(UUID packageId) {
     InternetPackage internetPackage =
         packages.findById(packageId).orElseThrow(() -> ApiException.notFound("Package not found"));
@@ -66,6 +72,7 @@ public class PackageService {
   }
 
   @Transactional
+  @CacheEvict(cacheNames = "portalPackages", allEntries = true)
   public List<PackageResponse> reorderPackages(ReorderPackagesRequest request) {
     UUID tenantId = tenantGuard.requireTenantId();
     int sort = 0;

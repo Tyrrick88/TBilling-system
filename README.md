@@ -18,6 +18,7 @@ npm run dev
 
 The frontend runs at `http://localhost:3000` by default.
 Set `BACKEND_API_URL` to the Spring Boot API base URL. The frontend proxies dashboard calls through `/api/backend/...`.
+The proxy also stores admin JWTs in httpOnly cookies, applies early request throttles, and can enforce country allowlists with `NEXT_GEOFENCE_*`.
 
 Useful frontend routes:
 
@@ -46,6 +47,15 @@ Seeded development logins:
 - Super Admin: `owner@tbilling.local` / `ChangeMe123!`
 
 M-Pesa Daraja remains mock/callback-ready until live credentials are available.
+
+Security/performance knobs:
+
+- `GEOFENCE_ENABLED=true` and `GEOFENCE_ALLOWED_COUNTRIES=KE,US` restrict API traffic by country headers from Vercel/Cloudflare/CDN proxies.
+- `GEOFENCE_BLOCK_UNKNOWN=true` blocks requests when the proxy does not provide a country header.
+- `RATE_LIMIT_AUTH_PER_MINUTE`, `RATE_LIMIT_PAYMENT_PER_MINUTE`, and `RATE_LIMIT_API_PER_MINUTE` tune backend per-IP limits.
+- Mirror the same values with `NEXT_RATE_LIMIT_*` and `NEXT_GEOFENCE_*` for the frontend proxy.
+- On Vercel, add Firewall rules for `/api/backend/auth/login` and `/api/backend/:path*` rate limiting, plus a country allowlist, so abusive traffic is stopped at the edge before it reaches the app.
+- See `docs/security-hardening.md` for deployment-ready Firewall rule templates.
 
 Useful backend routes:
 
