@@ -34,6 +34,7 @@ import {
 } from "lucide-react";
 import { AnimatePresence, motion, useReducedMotion, type Variants } from "framer-motion";
 import Image from "next/image";
+import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 type Plan = {
@@ -478,10 +479,10 @@ function TopBar({
   activeMode: ViewMode;
   onModeChange: (mode: ViewMode) => void;
 }) {
-  const modes: Array<{ id: ViewMode; label: string; icon: LucideIcon }> = [
+  const modes: Array<{ id: ViewMode; label: string; icon: LucideIcon; href?: string }> = [
     { id: "portal", label: "Portal", icon: MousePointer2 },
-    { id: "admin", label: "Admin", icon: BarChart3 },
-    { id: "super", label: "Super", icon: Landmark },
+    { id: "admin", label: "Admin", icon: BarChart3, href: "/admin" },
+    { id: "super", label: "Super", icon: Landmark, href: "/super-admin" },
   ];
 
   return (
@@ -498,19 +499,26 @@ function TopBar({
 
       <div className="flex items-center gap-2">
         <div className="segmented-control" role="tablist" aria-label="Dashboard view">
-          {modes.map((mode) => (
-            <button
-              key={mode.id}
-              type="button"
-              role="tab"
-              aria-selected={activeMode === mode.id}
-              onClick={() => onModeChange(mode.id)}
-              className={cn("segmented-button", activeMode === mode.id && "is-active")}
-            >
-              <mode.icon size={16} />
-              <span>{mode.label}</span>
-            </button>
-          ))}
+          {modes.map((mode) =>
+            mode.href ? (
+              <Link key={mode.id} href={mode.href} className="segmented-button" role="tab">
+                <mode.icon size={16} />
+                <span>{mode.label}</span>
+              </Link>
+            ) : (
+              <button
+                key={mode.id}
+                type="button"
+                role="tab"
+                aria-selected={activeMode === mode.id}
+                onClick={() => onModeChange(mode.id)}
+                className={cn("segmented-button", activeMode === mode.id && "is-active")}
+              >
+                <mode.icon size={16} />
+                <span>{mode.label}</span>
+              </button>
+            ),
+          )}
         </div>
         <button className="icon-command hidden sm:inline-flex" type="button" aria-label="Open settings">
           <Settings2 size={18} />
