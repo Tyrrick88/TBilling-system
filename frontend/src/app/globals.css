@@ -68,6 +68,11 @@ button:disabled {
   backdrop-filter: blur(22px);
 }
 
+.top-bar.brand-only {
+  justify-content: flex-start;
+  min-height: 68px;
+}
+
 .brand-mark {
   display: inline-flex;
   flex: 0 0 auto;

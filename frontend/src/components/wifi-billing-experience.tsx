@@ -4,7 +4,6 @@ import {
   Activity,
   ArrowRight,
   BadgeCheck,
-  BarChart3,
   CheckCircle2,
   ChevronRight,
   CreditCard,
@@ -13,18 +12,15 @@ import {
   Globe2,
   HeartPulse,
   History,
-  Landmark,
   LoaderCircle,
   LockKeyhole,
   MapPin,
   MessageCircle,
-  MousePointer2,
   Network,
   Phone,
   Receipt,
   RefreshCw,
   Router,
-  Settings2,
   ShieldCheck,
   Sparkles,
   TrendingUp,
@@ -34,7 +30,6 @@ import {
 } from "lucide-react";
 import { AnimatePresence, motion, useReducedMotion, type Variants } from "framer-motion";
 import Image from "next/image";
-import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 type Plan = {
@@ -200,7 +195,7 @@ export function WifiBillingExperience() {
   const [selectedPlan, setSelectedPlan] = useState(plans[1]);
   const [phone, setPhone] = useState("2547");
   const [paymentState, setPaymentState] = useState<PaymentState>("idle");
-  const [mode, setMode] = useState<ViewMode>("portal");
+  const [mode] = useState<ViewMode>("portal");
   const timers = useRef<Array<ReturnType<typeof setTimeout>>>([]);
 
   const paymentCopy = useMemo(() => {
@@ -273,7 +268,7 @@ export function WifiBillingExperience() {
       <SignalCanvas />
 
       <div className="relative z-10 mx-auto flex min-h-screen w-full max-w-[1500px] flex-col px-4 py-4 sm:px-6 lg:px-8">
-        <TopBar activeMode={mode} onModeChange={setMode} />
+        <TopBar />
 
         <section className="grid flex-1 grid-cols-1 gap-4 pb-8 pt-4 xl:grid-cols-[minmax(0,1fr)_430px]">
           <motion.section
@@ -472,57 +467,12 @@ export function WifiBillingExperience() {
   );
 }
 
-function TopBar({
-  activeMode,
-  onModeChange,
-}: {
-  activeMode: ViewMode;
-  onModeChange: (mode: ViewMode) => void;
-}) {
-  const modes: Array<{ id: ViewMode; label: string; icon: LucideIcon; href?: string }> = [
-    { id: "portal", label: "Portal", icon: MousePointer2 },
-    { id: "admin", label: "Admin", icon: BarChart3, href: "/admin" },
-    { id: "super", label: "Super", icon: Landmark, href: "/super-admin" },
-  ];
-
+function TopBar() {
   return (
-    <header className="top-bar">
+    <header className="top-bar brand-only">
       <div className="flex min-w-0 items-center gap-3">
         <div className="brand-mark h-11 w-11">TB</div>
-        <div className="min-w-0">
-          <p className="truncate text-sm text-white/58">TBIlling multi-tenant hotspot platform</p>
-          <h2 className="truncate text-lg font-semibold text-white">
-            M-Pesa WiFi access with free WhatsApp texts
-          </h2>
-        </div>
-      </div>
-
-      <div className="flex items-center gap-2">
-        <div className="segmented-control" role="tablist" aria-label="Dashboard view">
-          {modes.map((mode) =>
-            mode.href ? (
-              <Link key={mode.id} href={mode.href} className="segmented-button" role="tab">
-                <mode.icon size={16} />
-                <span>{mode.label}</span>
-              </Link>
-            ) : (
-              <button
-                key={mode.id}
-                type="button"
-                role="tab"
-                aria-selected={activeMode === mode.id}
-                onClick={() => onModeChange(mode.id)}
-                className={cn("segmented-button", activeMode === mode.id && "is-active")}
-              >
-                <mode.icon size={16} />
-                <span>{mode.label}</span>
-              </button>
-            ),
-          )}
-        </div>
-        <button className="icon-command hidden sm:inline-flex" type="button" aria-label="Open settings">
-          <Settings2 size={18} />
-        </button>
+        <h2 className="truncate text-lg font-semibold text-white">TBilling System</h2>
       </div>
     </header>
   );
