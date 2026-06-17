@@ -24,3 +24,23 @@ Useful frontend routes:
 - `/admin/users`, `/admin/packages`, `/admin/financials`, `/admin/network`, `/admin/downtime`, `/admin/settings`
 - `/super-admin` - Super Admin dashboard.
 - `/super-admin/tenants`, `/super-admin/analytics`, `/super-admin/isp-config`, `/super-admin/error-logs`, `/super-admin/billing`
+
+## Backend
+
+```bash
+cd backend
+cp .env.example .env
+docker compose up postgres redis -d
+mvn spring-boot:run
+```
+
+The backend runs at `http://localhost:8080` and includes seeded Super Admin and Client Admin accounts.
+
+Useful backend routes:
+
+- `POST /api/v1/auth/login`
+- `GET /api/v1/portal/karurina-market`
+- `GET /api/v1/admin/overview`
+- `GET /api/v1/admin/packages`
+- `GET /api/v1/super/tenants`
+- `PUT /api/v1/network/zero-rated-ips`

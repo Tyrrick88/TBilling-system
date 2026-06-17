@@ -1,0 +1,76 @@
+server:
+  port: ${PORT:8080}
+  shutdown: graceful
+
+spring:
+  application:
+    name: tbilling-backend
+  datasource:
+    url: ${DATABASE_URL:jdbc:postgresql://localhost:5432/tbilling}
+    username: ${DATABASE_USERNAME:tbilling}
+    password: ${DATABASE_PASSWORD:tbilling}
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+  flyway:
+    enabled: true
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    open-in-view: false
+    properties:
+      hibernate:
+        jdbc:
+          time_zone: UTC
+  servlet:
+    multipart:
+      max-file-size: 2MB
+      max-request-size: 2MB
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics
+  endpoint:
+    health:
+      probes:
+        enabled: true
+
+logging:
+  level:
+    com.tbilling: ${LOG_LEVEL:INFO}
+
+tbilling:
+  jwt:
+    secret: ${JWT_SECRET:change-me-to-a-very-long-secret-before-production}
+    access-ttl: ${JWT_ACCESS_TTL:15m}
+    refresh-ttl: ${JWT_REFRESH_TTL:7d}
+  super-admin:
+    email: ${TBILLING_SUPER_ADMIN_EMAIL:owner@tbilling.local}
+    password: ${TBILLING_SUPER_ADMIN_PASSWORD:ChangeMe123!}
+  jobs:
+    network-monitor:
+      enabled: ${NETWORK_MONITOR_ENABLED:false}
+      interval: ${NETWORK_MONITOR_INTERVAL:30s}
+      latency-threshold-ms: ${NETWORK_LATENCY_THRESHOLD_MS:300}
+      failure-threshold: ${NETWORK_FAILURE_THRESHOLD:2}
+    zero-rating:
+      enabled: ${ZERO_RATING_JOB_ENABLED:false}
+  daraja:
+    base-url: ${DARAJA_BASE_URL:https://sandbox.safaricom.co.ke}
+    consumer-key: ${DARAJA_CONSUMER_KEY:}
+    consumer-secret: ${DARAJA_CONSUMER_SECRET:}
+    passkey: ${DARAJA_PASSKEY:}
+    callback-url: ${DARAJA_CALLBACK_URL:http://localhost:8080/api/v1/payments/callback}
+    sandbox-mode: ${DARAJA_SANDBOX_MODE:true}
+  mikrotik:
+    host: ${MIKROTIK_HOST:localhost}
+    port: ${MIKROTIK_PORT:8728}
+    username: ${MIKROTIK_USERNAME:admin}
+    password: ${MIKROTIK_PASSWORD:}
+    enabled: ${MIKROTIK_ENABLED:false}
+  storage:
+    public-base-url: ${STORAGE_PUBLIC_BASE_URL:http://localhost:8080/uploads}
+    max-logo-bytes: ${STORAGE_MAX_LOGO_BYTES:2097152}

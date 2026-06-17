@@ -1,0 +1,36 @@
+spring:
+  datasource:
+    url: jdbc:h2:mem:tbilling;MODE=PostgreSQL;DATABASE_TO_LOWER=TRUE;DB_CLOSE_DELAY=-1
+    username: sa
+    password:
+    driver-class-name: org.h2.Driver
+  flyway:
+    enabled: false
+  cache:
+    type: simple
+  jpa:
+    hibernate:
+      ddl-auto: create-drop
+    show-sql: false
+  data:
+    redis:
+      repositories:
+        enabled: false
+
+management:
+  health:
+    redis:
+      enabled: false
+
+tbilling:
+  jobs:
+    network-monitor:
+      enabled: false
+    zero-rating:
+      enabled: false
+
+logging:
+  level:
+    root: INFO
+    org.hibernate.SQL: WARN
+    org.springframework: INFO

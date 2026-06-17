@@ -8,6 +8,8 @@ out/
 # production
 build/
 dist/
+target/
+backend/target/
 
 # local env
 .env
