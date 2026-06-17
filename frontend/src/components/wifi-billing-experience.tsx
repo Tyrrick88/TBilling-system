@@ -21,7 +21,6 @@ import {
   MousePointer2,
   Network,
   Phone,
-  Radio,
   Receipt,
   RefreshCw,
   Router,
@@ -120,7 +119,7 @@ const dashboardMetrics = [
   {
     label: "Uptime",
     value: "99.94%",
-    delta: "Starlink primary",
+    delta: "Primary link healthy",
     icon: HeartPulse,
   },
   {
@@ -152,7 +151,7 @@ const activityFeed = [
   },
   {
     title: "Failover ready",
-    detail: "Airtel backup route tested at 42 ms",
+    detail: "Backup route tested at 42 ms",
     time: "4m",
     icon: Network,
   },
@@ -200,7 +199,7 @@ export function WifiBillingExperience() {
   const [selectedPlan, setSelectedPlan] = useState(plans[1]);
   const [phone, setPhone] = useState("2547");
   const [paymentState, setPaymentState] = useState<PaymentState>("idle");
-  const [mode, setMode] = useState<ViewMode>("admin");
+  const [mode, setMode] = useState<ViewMode>("portal");
   const timers = useRef<Array<ReturnType<typeof setTimeout>>>([]);
 
   const paymentCopy = useMemo(() => {
@@ -285,9 +284,7 @@ export function WifiBillingExperience() {
             <div className="grid h-full grid-cols-1 gap-4 lg:grid-cols-[minmax(0,0.96fr)_minmax(340px,0.74fr)]">
               <div className="flex min-w-0 flex-col justify-between gap-7 p-5 sm:p-7 lg:p-8">
                 <motion.div variants={itemIn} className="flex flex-wrap gap-2">
-                  <StatusPill icon={MessageCircle} label="WhatsApp active" tone="green" pulsing />
-                  <StatusPill icon={Radio} label="Starlink primary" tone="blue" />
-                  <StatusPill icon={ShieldCheck} label="Airtel failover armed" tone="amber" />
+                  <StatusPill icon={MessageCircle} label="WhatsApp texts free" tone="green" pulsing />
                 </motion.div>
 
                 <motion.div variants={itemIn} className="max-w-3xl">
@@ -494,7 +491,7 @@ function TopBar({
         <div className="min-w-0">
           <p className="truncate text-sm text-white/58">TBIlling multi-tenant hotspot platform</p>
           <h2 className="truncate text-lg font-semibold text-white">
-            Starlink + M-Pesa + WhatsApp zero-rating
+            M-Pesa WiFi access with free WhatsApp texts
           </h2>
         </div>
       </div>
@@ -531,7 +528,7 @@ function StatusPill({
 }: {
   icon: LucideIcon;
   label: string;
-  tone: "green" | "blue" | "amber";
+  tone: "green";
   pulsing?: boolean;
 }) {
   return (

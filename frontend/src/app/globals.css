@@ -183,14 +183,6 @@ button:disabled {
   border-color: rgba(95, 242, 178, 0.3);
 }
 
-.status-blue {
-  border-color: rgba(87, 216, 232, 0.28);
-}
-
-.status-amber {
-  border-color: rgba(244, 199, 109, 0.28);
-}
-
 .status-dot {
   width: 8px;
   height: 8px;
