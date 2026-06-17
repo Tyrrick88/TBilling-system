@@ -20,6 +20,7 @@ import {
   History,
   Landmark,
   LayoutDashboard,
+  LogOut,
   MessageCircle,
   Network,
   Package,
@@ -42,7 +43,29 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import Link from "next/link";
-import { ChangeEvent, DragEvent, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
+import { ChangeEvent, DragEvent, useCallback, useEffect, useMemo, useState } from "react";
+import {
+  clearStoredAuth,
+  createInvoice as createInvoiceApi,
+  createTenant as createTenantApi,
+  deletePackage as deletePackageApi,
+  deleteTenant as deleteTenantApi,
+  getStoredAuth,
+  loadClientWorkspace,
+  loadSuperWorkspace,
+  reorderPackages as reorderPackagesApi,
+  savePackage as savePackageApi,
+  syncZeroRatedIps,
+  updateIspConfig as updateIspConfigApi,
+  updateTenantSettings as updateTenantSettingsApi,
+  updateTenantStatus as updateTenantStatusApi,
+  uploadTenantLogo,
+  type AuthSession,
+  type DashboardNetworkStatus,
+  type DashboardOverview,
+  type PlatformOverview,
+} from "@/lib/api-client";
 
 type Role = "client" | "super";
 type ClientSection =
@@ -332,6 +355,40 @@ const revenueBars = [42, 58, 52, 68, 76, 64, 88, 82, 94, 71, 78, 91];
 const sessionsByHour = [12, 18, 24, 34, 48, 62, 71, 78, 69, 54, 42, 31];
 const uptimeSeries = [98, 99, 97, 100, 99, 100, 99];
 
+const defaultClientOverview: DashboardOverview = {
+  activeUsers: initialSessions.filter((session) => session.status === "ACTIVE").length,
+  todayRevenue: initialTransactions
+    .filter((transaction) => transaction.status === "PAID")
+    .reduce((sum, transaction) => sum + transaction.amount, 0),
+  sessionsToday: initialSessions.length,
+  networkUptime: 99.94,
+  zeroRatingConversions: 47,
+  revenueSeries: revenueBars,
+  sessionsByHour,
+};
+
+const defaultNetworkStatus: DashboardNetworkStatus = {
+  primaryProvider: "Primary",
+  backupProvider: "Backup",
+  activeProvider: "Primary",
+  latencyMs: 42,
+  packetLossPercent: 0,
+  failoverActive: false,
+};
+
+const defaultPlatformOverview: PlatformOverview = {
+  totalRevenue: initialTenants.reduce((sum, tenant) => sum + tenant.revenue, 0),
+  totalActiveSessions: 1284,
+  totalRegisteredClients: initialTenants.length,
+  platformUptime: 99.96,
+  revenueByTenant: initialTenants.map((tenant) => Math.max(20, tenant.revenue / 16000)),
+  sessionsByRegion: [
+    { region: "Embu", sessions: 4882, revenue: 1420000, conversion: "41%" },
+    { region: "Kirinyaga", sessions: 2109, revenue: 780000, conversion: "38%" },
+    { region: "Meru", sessions: 1804, revenue: 618000, conversion: "36%" },
+  ],
+};
+
 const emptyPackageDraft = {
   name: "",
   speed: "2",
@@ -369,6 +426,10 @@ function statusClass(status: string) {
   return "status-muted";
 }
 
+function errorMessage(error: unknown, fallback: string) {
+  return error instanceof Error ? `${fallback} ${error.message}` : fallback;
+}
+
 export function AdminConsole({
   role,
   section,
@@ -376,6 +437,13 @@ export function AdminConsole({
   role: Role;
   section: ClientSection | SuperSection;
 }) {
+  const router = useRouter();
+  const [auth, setAuth] = useState<AuthSession | null>(null);
+  const [apiConnected, setApiConnected] = useState(false);
+  const [loadingWorkspace, setLoadingWorkspace] = useState(true);
+  const [clientOverview, setClientOverview] = useState(defaultClientOverview);
+  const [platformOverview, setPlatformOverview] = useState(defaultPlatformOverview);
+  const [networkStatus, setNetworkStatus] = useState(defaultNetworkStatus);
   const [packages, setPackages] = useState(initialPackages);
   const [sessions, setSessions] = useState(initialSessions);
   const [transactions, setTransactions] = useState(initialTransactions);
@@ -420,14 +488,79 @@ export function AdminConsole({
     amount: "7500",
     due: "2026-06-30",
   });
-  const [toast, setToast] = useState("All frontend changes are local until backend APIs are connected.");
+  const [toast, setToast] = useState("Checking backend connection.");
 
   const navItems = role === "client" ? clientNav : superNav;
   const activeNav = navItems.find((item) => item.id === section) ?? navItems[0];
+  const loginPath = role === "client" ? "/admin/login" : "/super-admin/login";
   const totalRevenue = transactions
     .filter((transaction) => transaction.status === "PAID")
     .reduce((sum, transaction) => sum + transaction.amount, 0);
-  const activeUsers = sessions.filter((session) => session.status === "ACTIVE").length;
+  const activeUsers = apiConnected ? clientOverview.activeUsers : sessions.filter((session) => session.status === "ACTIVE").length;
+  const clientRevenueBars = clientOverview.revenueSeries.some(Boolean) ? clientOverview.revenueSeries : revenueBars;
+  const clientSessionsByHour = clientOverview.sessionsByHour.some(Boolean) ? clientOverview.sessionsByHour : sessionsByHour;
+  const platformRevenueBars = platformOverview.revenueByTenant.some(Boolean)
+    ? platformOverview.revenueByTenant
+    : tenants.map((tenant) => Math.max(20, tenant.revenue / 16000));
+
+  const loadWorkspace = useCallback(
+    async (session: AuthSession) => {
+      setLoadingWorkspace(true);
+      try {
+        if (role === "client") {
+          const workspace = await loadClientWorkspace(session.accessToken);
+          setClientOverview(workspace.overview);
+          setPackages(workspace.packages);
+          setSessions(workspace.sessions);
+          setTransactions(workspace.transactions);
+          setOutages(workspace.outages);
+          setTenantSettings(workspace.settings);
+          setZeroRating(workspace.zeroRatingEnabled);
+          setLogoPreview(workspace.logoUrl);
+          setNetworkStatus(workspace.networkStatus);
+        } else {
+          const workspace = await loadSuperWorkspace(session.accessToken);
+          setTenants(workspace.tenants);
+          setPlatformOverview(workspace.analytics);
+          setIspConfig(workspace.ispConfig);
+          setErrors(workspace.errors);
+          setInvoices(workspace.invoices);
+          if (workspace.tenants[0]) {
+            setInvoiceDraft((draft) => ({ ...draft, tenant: workspace.tenants[0].business }));
+          }
+        }
+        setApiConnected(true);
+        setToast("Backend connected. Dashboard data is synced.");
+      } catch (error) {
+        setApiConnected(false);
+        setToast(errorMessage(error, "Backend unavailable. Showing demo data."));
+      } finally {
+        setLoadingWorkspace(false);
+      }
+    },
+    [role],
+  );
+
+  useEffect(() => {
+    let cancelled = false;
+    const storedAuth = getStoredAuth(role);
+    if (!storedAuth) {
+      router.replace(loginPath);
+      return () => {
+        cancelled = true;
+      };
+    }
+
+    void Promise.resolve().then(() => {
+      if (cancelled) return;
+      setAuth(storedAuth);
+      void loadWorkspace(storedAuth);
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [loadWorkspace, loginPath, role, router]);
 
   const filteredSessions = useMemo(() => {
     return sessions.filter((session) => {
@@ -461,7 +594,7 @@ export function AdminConsole({
     );
   }, [tenantSearch, tenants]);
 
-  function savePackage() {
+  async function savePackage() {
     const nextPackage: PackageItem = {
       id: editingPackageId ?? `pkg-${Date.now()}`,
       name: packageDraft.name.trim() || "Custom Pass",
@@ -470,6 +603,29 @@ export function AdminConsole({
       price: Number(packageDraft.price) || 10,
       active: packageDraft.active,
     };
+
+    if (apiConnected && auth) {
+      try {
+        const sortOrder = editingPackageId
+          ? Math.max(
+              0,
+              packages.findIndex((item) => item.id === editingPackageId),
+            )
+          : packages.length;
+        const savedPackage = await savePackageApi(auth.accessToken, nextPackage, sortOrder, editingPackageId);
+        setPackages((current) =>
+          editingPackageId
+            ? current.map((item) => (item.id === editingPackageId ? savedPackage : item))
+            : [...current, savedPackage],
+        );
+        setEditingPackageId(null);
+        setPackageDraft(emptyPackageDraft);
+        setToast(`${savedPackage.name} package saved to backend.`);
+        return;
+      } catch (error) {
+        setToast(errorMessage(error, "Package API sync failed. Saved locally for now."));
+      }
+    }
 
     setPackages((current) =>
       editingPackageId
@@ -492,25 +648,63 @@ export function AdminConsole({
     });
   }
 
-  function movePackage(id: string, direction: -1 | 1) {
-    setPackages((current) => {
-      const index = current.findIndex((item) => item.id === id);
-      const nextIndex = index + direction;
-      if (index < 0 || nextIndex < 0 || nextIndex >= current.length) return current;
-      const next = [...current];
-      [next[index], next[nextIndex]] = [next[nextIndex], next[index]];
-      return next;
-    });
+  async function movePackage(id: string, direction: -1 | 1) {
+    const index = packages.findIndex((item) => item.id === id);
+    const nextIndex = index + direction;
+    if (index < 0 || nextIndex < 0 || nextIndex >= packages.length) return;
+
+    const reordered = [...packages];
+    [reordered[index], reordered[nextIndex]] = [reordered[nextIndex], reordered[index]];
+    setPackages(reordered);
+
+    if (apiConnected && auth && reordered) {
+      try {
+        const synced = await reorderPackagesApi(
+          auth.accessToken,
+          reordered.map((item) => item.id),
+        );
+        setPackages(synced);
+        setToast("Package order synced to captive portal.");
+      } catch (error) {
+        setToast(errorMessage(error, "Package order changed locally. Backend reorder failed."));
+      }
+    }
+  }
+
+  async function removePackage(id: string) {
+    if (apiConnected && auth) {
+      try {
+        await deletePackageApi(auth.accessToken, id);
+        setPackages((current) => current.filter((pkg) => pkg.id !== id));
+        setToast("Package hidden from backend portal list.");
+        return;
+      } catch (error) {
+        setToast(errorMessage(error, "Package delete failed. Removed locally for now."));
+      }
+    }
+
+    setPackages((current) => current.filter((pkg) => pkg.id !== id));
   }
 
   function updateSessionStatus(id: string, status: SessionItem["status"]) {
     setSessions((current) => current.map((item) => (item.id === id ? { ...item, status } : item)));
   }
 
-  function handleLogoFile(file?: File) {
+  async function handleLogoFile(file?: File) {
     if (!file) return;
     setLogoPreview(URL.createObjectURL(file));
-    setToast(`${file.name} preview loaded. Backend upload will persist it later.`);
+    if (apiConnected && auth) {
+      try {
+        const upload = await uploadTenantLogo(auth.accessToken, file);
+        setLogoPreview(upload.logoUrl);
+        setToast(upload.message);
+        return;
+      } catch (error) {
+        setToast(errorMessage(error, `${file.name} preview loaded. Backend upload failed.`));
+      }
+      return;
+    }
+    setToast(`${file.name} preview loaded.`);
   }
 
   function addOutage(formData: FormData) {
@@ -530,8 +724,20 @@ export function AdminConsole({
     setToast("Downtime event logged.");
   }
 
-  function addTenant() {
+  async function addTenant() {
     const business = tenantDraft.business.trim() || "New Hotspot";
+    if (apiConnected && auth) {
+      try {
+        const created = await createTenantApi(auth.accessToken, tenantDraft);
+        setTenants((current) => [created, ...current]);
+        setTenantDraft({ admin: "", business: "", location: "", plan: "KES 5,000/mo" });
+        setToast(`${created.business} tenant created with a seeded admin login.`);
+        return;
+      } catch (error) {
+        setToast(errorMessage(error, "Tenant API create failed. Added locally for now."));
+      }
+    }
+
     setTenants((current) => [
       {
         id: `tenant-${Date.now()}`,
@@ -548,6 +754,105 @@ export function AdminConsole({
     ]);
     setTenantDraft({ admin: "", business: "", location: "", plan: "KES 5,000/mo" });
     setToast(`${business} tenant created in frontend state.`);
+  }
+
+  async function toggleTenantStatus(tenant: Tenant) {
+    if (apiConnected && auth) {
+      try {
+        const updated = await updateTenantStatusApi(auth.accessToken, tenant);
+        setTenants((current) => current.map((item) => (item.id === tenant.id ? updated : item)));
+        setToast(`${updated.business} status updated.`);
+        return;
+      } catch (error) {
+        setToast(errorMessage(error, "Tenant status API update failed. Toggled locally for now."));
+      }
+    }
+
+    setTenants((current) =>
+      current.map((item) =>
+        item.id === tenant.id ? { ...item, status: item.status === "ACTIVE" ? "SUSPENDED" : "ACTIVE" } : item,
+      ),
+    );
+  }
+
+  async function removeTenant(tenant: Tenant) {
+    if (apiConnected && auth) {
+      try {
+        await deleteTenantApi(auth.accessToken, tenant.id);
+        setTenants((current) => current.filter((item) => item.id !== tenant.id));
+        setToast(`${tenant.business} tenant deleted.`);
+        return;
+      } catch (error) {
+        setToast(errorMessage(error, "Tenant delete failed. Removed locally for now."));
+      }
+    }
+
+    setTenants((current) => current.filter((item) => item.id !== tenant.id));
+  }
+
+  async function saveSettings() {
+    setSettingsSaved(true);
+    if (apiConnected && auth) {
+      try {
+        const updated = await updateTenantSettingsApi(auth.accessToken, tenantSettings, zeroRating);
+        setTenantSettings(updated.settings);
+        setZeroRating(updated.zeroRatingEnabled);
+        if (updated.zeroRatingEnabled) {
+          await syncZeroRatedIps(auth.accessToken);
+        }
+        setToast("Tenant settings saved to backend.");
+        return;
+      } catch (error) {
+        setToast(errorMessage(error, "Settings API update failed. Kept local changes."));
+      }
+      return;
+    }
+    setToast("Settings saved locally.");
+  }
+
+  async function saveIspRules() {
+    if (apiConnected && auth) {
+      try {
+        const updated = await updateIspConfigApi(auth.accessToken, ispConfig);
+        setIspConfig(updated);
+        setToast("Global ISP config saved to backend.");
+        return;
+      } catch (error) {
+        setToast(errorMessage(error, "ISP config API update failed. Kept local changes."));
+      }
+      return;
+    }
+    setToast("Global ISP config saved locally.");
+  }
+
+  async function generateInvoice() {
+    if (apiConnected && auth) {
+      try {
+        const invoice = await createInvoiceApi(auth.accessToken, invoiceDraft, tenants);
+        setInvoices((current) => [invoice, ...current]);
+        setToast(`${invoice.id} invoice generated.`);
+        return;
+      } catch (error) {
+        setToast(errorMessage(error, "Invoice API create failed. Generated local draft."));
+      }
+    }
+
+    setInvoices((current) => [
+      {
+        id: `INV-${1031 + current.length}`,
+        tenant: invoiceDraft.tenant,
+        amount: Number(invoiceDraft.amount),
+        due: invoiceDraft.due,
+        status: "DRAFT",
+      },
+      ...current,
+    ]);
+    setToast("Invoice draft generated.");
+  }
+
+  function logout() {
+    clearStoredAuth(role);
+    router.replace(loginPath);
   }
 
   function renderClientSection() {
@@ -671,9 +976,7 @@ export function AdminConsole({
                         Down
                       </button>
                       <button onClick={() => editPackage(item)}>Edit</button>
-                      <button onClick={() => setPackages((current) => current.filter((pkg) => pkg.id !== item.id))}>
-                        Delete
-                      </button>
+                      <button onClick={() => removePackage(item.id)}>Delete</button>
                     </div>
                   </div>
                 ))}
@@ -744,15 +1047,25 @@ export function AdminConsole({
           <SectionGrid>
             <MetricStrip
               metrics={[
-                { label: "Primary latency", value: "42 ms", icon: Gauge },
-                { label: "Packet loss", value: "0.2%", icon: Activity },
-                { label: "Uptime", value: "99.94%", icon: ShieldCheck },
+                { label: "Primary latency", value: `${networkStatus.latencyMs} ms`, icon: Gauge },
+                { label: "Packet loss", value: `${networkStatus.packetLossPercent}%`, icon: Activity },
+                { label: "Uptime", value: `${clientOverview.networkUptime.toFixed(2)}%`, icon: ShieldCheck },
               ]}
             />
             <Panel title="ISP health" icon={Network}>
               <div className="network-grid">
-                <NetworkCard name="Primary ISP" latency="42 ms" packetLoss="0.2%" status="Healthy" />
-                <NetworkCard name="Backup ISP" latency="58 ms" packetLoss="0.4%" status="Ready" />
+                <NetworkCard
+                  name="Primary ISP"
+                  latency={`${networkStatus.latencyMs} ms`}
+                  packetLoss={`${networkStatus.packetLossPercent}%`}
+                  status={networkStatus.failoverActive ? "Ready" : "Healthy"}
+                />
+                <NetworkCard
+                  name="Backup ISP"
+                  latency={`${Math.max(networkStatus.latencyMs + 16, networkStatus.latencyMs)} ms`}
+                  packetLoss={`${networkStatus.packetLossPercent}%`}
+                  status={networkStatus.failoverActive ? "Healthy" : "Ready"}
+                />
               </div>
               <MiniBarChart values={uptimeSeries} label="Last 7 days uptime" />
               <div className="form-footer">
@@ -907,15 +1220,8 @@ export function AdminConsole({
                 <Toggle checked onChange={() => undefined} label="Email failover alerts" />
               </div>
               <div className="form-footer">
-                <Button
-                  icon={Save}
-                  onClick={() => {
-                    setSettingsSaved(true);
-                    setToast("Settings saved in frontend state.");
-                  }}
-                  label="Save settings"
-                />
-                {settingsSaved && <span className="save-note">Saved locally</span>}
+                <Button icon={Save} onClick={saveSettings} label="Save settings" />
+                {settingsSaved && <span className="save-note">{apiConnected ? "Synced" : "Saved locally"}</span>}
               </div>
             </Panel>
           </SectionGrid>
@@ -927,16 +1233,24 @@ export function AdminConsole({
             <MetricStrip
               metrics={[
                 { label: "Active users", value: String(activeUsers), icon: Wifi },
-                { label: "Today revenue", value: formatKes(totalRevenue), icon: CircleDollarSign },
-                { label: "Sessions today", value: String(sessions.length), icon: Users },
-                { label: "Zero-rate conversions", value: "40%", icon: MessageCircle },
+                {
+                  label: "Today revenue",
+                  value: formatKes(apiConnected ? clientOverview.todayRevenue : totalRevenue),
+                  icon: CircleDollarSign,
+                },
+                {
+                  label: "Sessions today",
+                  value: String(apiConnected ? clientOverview.sessionsToday : sessions.length),
+                  icon: Users,
+                },
+                { label: "Zero-rate conversions", value: String(clientOverview.zeroRatingConversions), icon: MessageCircle },
               ]}
             />
             <Panel title="Revenue over 30 days" icon={BarChart3}>
-              <MiniBarChart values={revenueBars} label="Revenue trend" />
+              <MiniBarChart values={clientRevenueBars} label="Revenue trend" />
             </Panel>
             <Panel title="Sessions by hour" icon={Activity}>
-              <MiniBarChart values={sessionsByHour} label="Hourly sessions" />
+              <MiniBarChart values={clientSessionsByHour} label="Hourly sessions" />
             </Panel>
             <Panel title="Zero-rating funnel" icon={MessageCircle}>
               <div className="funnel-line">
@@ -1018,25 +1332,11 @@ export function AdminConsole({
                   formatKes(tenant.revenue),
                   <StatusBadge key="status" status={tenant.status} />,
                   <div key="actions" className="table-actions">
-                    <button
-                      onClick={() =>
-                        setTenants((current) =>
-                          current.map((item) =>
-                            item.id === tenant.id
-                              ? { ...item, status: item.status === "ACTIVE" ? "SUSPENDED" : "ACTIVE" }
-                              : item,
-                          ),
-                        )
-                      }
-                    >
-                      Toggle
-                    </button>
+                    <button onClick={() => toggleTenantStatus(tenant)}>Toggle</button>
                     <button onClick={() => setToast(`Password reset link prepared for ${tenant.admin}.`)}>
                       Reset
                     </button>
-                    <button onClick={() => setTenants((current) => current.filter((item) => item.id !== tenant.id))}>
-                      Delete
-                    </button>
+                    <button onClick={() => removeTenant(tenant)}>Delete</button>
                   </div>,
                 ])}
               />
@@ -1049,22 +1349,23 @@ export function AdminConsole({
           <SectionGrid>
             <MetricStrip
               metrics={[
-                { label: "Platform revenue", value: formatKes(tenants.reduce((sum, tenant) => sum + tenant.revenue, 0)), icon: Landmark },
-                { label: "Active sessions", value: "1,284", icon: Wifi },
-                { label: "Regions", value: "8", icon: Globe2 },
+                { label: "Platform revenue", value: formatKes(platformOverview.totalRevenue), icon: Landmark },
+                { label: "Active sessions", value: platformOverview.totalActiveSessions.toLocaleString("en-KE"), icon: Wifi },
+                { label: "Regions", value: String(Math.max(1, platformOverview.sessionsByRegion.length)), icon: Globe2 },
               ]}
             />
             <Panel title="Revenue by tenant" icon={BarChart3}>
-              <MiniBarChart values={tenants.map((tenant) => Math.max(20, tenant.revenue / 16000))} label="Tenant revenue" />
+              <MiniBarChart values={platformRevenueBars} label="Tenant revenue" />
             </Panel>
             <Panel title="Sessions by region" icon={Globe2}>
               <ResponsiveTable
                 headers={["Region", "Sessions", "Revenue", "Conversion"]}
-                rows={[
-                  ["Embu", "4,882", "KES 1.42m", "41%"],
-                  ["Kirinyaga", "2,109", "KES 780k", "38%"],
-                  ["Meru", "1,804", "KES 618k", "36%"],
-                ]}
+                rows={platformOverview.sessionsByRegion.map((region) => [
+                  region.region,
+                  region.sessions.toLocaleString("en-KE"),
+                  region.revenue ? formatKes(region.revenue) : "N/A",
+                  region.conversion,
+                ])}
               />
             </Panel>
           </SectionGrid>
@@ -1104,7 +1405,7 @@ export function AdminConsole({
                 />
               </div>
               <div className="form-footer">
-                <Button icon={Save} onClick={() => setToast("Global ISP config saved locally.")} label="Save rules" />
+                <Button icon={Save} onClick={saveIspRules} label="Save rules" />
                 <Button icon={Send} onClick={() => setToast("Test notification queued in frontend state.")} label="Test webhook" secondary />
               </div>
             </Panel>
@@ -1176,23 +1477,7 @@ export function AdminConsole({
                   type="date"
                 />
               </div>
-              <Button
-                icon={Plus}
-                onClick={() => {
-                  setInvoices((current) => [
-                    {
-                      id: `INV-${1031 + current.length}`,
-                      tenant: invoiceDraft.tenant,
-                      amount: Number(invoiceDraft.amount),
-                      due: invoiceDraft.due,
-                      status: "DRAFT",
-                    },
-                    ...current,
-                  ]);
-                  setToast("Invoice draft generated.");
-                }}
-                label="Generate invoice"
-              />
+              <Button icon={Plus} onClick={generateInvoice} label="Generate invoice" />
             </Panel>
             <Panel title="SaaS billing" icon={CreditCard}>
               <ResponsiveTable
@@ -1234,14 +1519,14 @@ export function AdminConsole({
           <SectionGrid>
             <MetricStrip
               metrics={[
-                { label: "Platform revenue", value: formatKes(tenants.reduce((sum, tenant) => sum + tenant.revenue, 0)), icon: Landmark },
+                { label: "Platform revenue", value: formatKes(platformOverview.totalRevenue), icon: Landmark },
                 { label: "Active tenants", value: String(tenants.filter((tenant) => tenant.status === "ACTIVE").length), icon: Building2 },
-                { label: "Active sessions", value: "1,284", icon: Wifi },
-                { label: "Platform uptime", value: "99.96%", icon: ShieldCheck },
+                { label: "Active sessions", value: platformOverview.totalActiveSessions.toLocaleString("en-KE"), icon: Wifi },
+                { label: "Platform uptime", value: `${platformOverview.platformUptime.toFixed(2)}%`, icon: ShieldCheck },
               ]}
             />
             <Panel title="Revenue by tenant" icon={BarChart3}>
-              <MiniBarChart values={tenants.map((tenant) => Math.max(20, tenant.revenue / 16000))} label="Revenue by tenant" />
+              <MiniBarChart values={platformRevenueBars} label="Revenue by tenant" />
             </Panel>
             <Panel title="Tenant health" icon={Building2}>
               <ResponsiveTable
@@ -1302,20 +1587,24 @@ export function AdminConsole({
             <h1>{activeNav.label}</h1>
           </div>
           <div className="dashboard-actions">
-            <span className="sync-pill">
-              <CheckCircle2 size={15} />
-              Mock frontend ready
+            <span className={cx("sync-pill", !apiConnected && !loadingWorkspace && "is-muted")}>
+              {loadingWorkspace ? <RefreshCw size={15} /> : <CheckCircle2 size={15} />}
+              {loadingWorkspace ? "Syncing backend" : apiConnected ? "Backend connected" : "Demo fallback"}
             </span>
             <Link className="admin-secondary-button" href={role === "client" ? "/super-admin" : "/admin"}>
               {role === "client" ? "Open Super" : "Open Client"}
             </Link>
+            <button className="admin-secondary-button" type="button" onClick={logout}>
+              <LogOut size={16} />
+              Logout
+            </button>
           </div>
         </header>
 
         <div className="toast-line">
           <Bell size={16} />
           {toast}
-          <button onClick={() => setToast("All frontend changes are local until backend APIs are connected.")}>
+          <button onClick={() => setToast(apiConnected ? "Backend connected. Dashboard data is synced." : "Demo fallback active.")}>
             <X size={15} />
           </button>
         </div>

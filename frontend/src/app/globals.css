@@ -806,6 +806,12 @@ button:disabled {
   font-size: 13px;
 }
 
+.sync-pill.is-muted {
+  border-color: rgba(255, 255, 255, 0.12);
+  color: rgba(255, 255, 255, 0.62);
+  background: rgba(255, 255, 255, 0.055);
+}
+
 .toast-line {
   width: 100%;
   justify-content: flex-start;
@@ -1297,6 +1303,132 @@ button:disabled {
   color: #06130f;
   background: #79ffc9;
   font-weight: 800;
+}
+
+.login-page {
+  display: grid;
+  min-height: 100vh;
+  place-items: center;
+  padding: 18px;
+  background:
+    radial-gradient(circle at 18% 12%, rgba(95, 242, 178, 0.16), transparent 28%),
+    radial-gradient(circle at 76% 70%, rgba(244, 199, 109, 0.1), transparent 30%),
+    linear-gradient(145deg, #06120f, #071c18 58%, #05100e);
+}
+
+.login-shell {
+  display: grid;
+  width: min(100%, 430px);
+  gap: 14px;
+}
+
+.login-brand,
+.login-panel {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background:
+    linear-gradient(145deg, rgba(255, 255, 255, 0.08), rgba(255, 255, 255, 0.03)),
+    rgba(8, 24, 21, 0.78);
+  box-shadow: 0 24px 72px rgba(0, 0, 0, 0.32);
+  backdrop-filter: blur(24px);
+}
+
+.login-brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 82px;
+  padding: 14px;
+}
+
+.login-brand span,
+.login-panel-head p {
+  display: block;
+  margin: 0;
+  color: rgba(255, 255, 255, 0.56);
+  font-size: 13px;
+}
+
+.login-brand strong {
+  display: block;
+  margin-top: 2px;
+  color: #ffffff;
+  font-size: 18px;
+}
+
+.login-panel {
+  display: grid;
+  gap: 14px;
+  padding: 18px;
+}
+
+.login-panel-head {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  margin-bottom: 2px;
+}
+
+.login-panel-head svg,
+.login-input svg {
+  color: var(--emerald);
+}
+
+.login-panel-head h1 {
+  margin: 2px 0 0;
+  color: #ffffff;
+  font-size: 2rem;
+  line-height: 1;
+}
+
+.login-panel label {
+  display: grid;
+  gap: 7px;
+  color: rgba(255, 255, 255, 0.64);
+  font-size: 13px;
+}
+
+.login-input {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-height: 48px;
+  border: 1px solid rgba(255, 255, 255, 0.13);
+  border-radius: 8px;
+  padding: 0 12px;
+  background: rgba(0, 0, 0, 0.22);
+}
+
+.login-input:focus-within {
+  border-color: rgba(122, 255, 205, 0.7);
+  box-shadow: 0 0 0 4px rgba(95, 242, 178, 0.09);
+}
+
+.login-input input {
+  min-width: 0;
+  width: 100%;
+  border: 0;
+  outline: 0;
+  color: #ffffff;
+  background: transparent;
+}
+
+.login-error {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 40px;
+  border: 1px solid rgba(255, 99, 99, 0.22);
+  border-radius: 8px;
+  padding: 9px 10px;
+  color: #ffc4c4;
+  background: rgba(255, 99, 99, 0.1);
+  font-size: 13px;
+}
+
+.login-submit {
+  width: 100%;
+  min-height: 48px;
 }
 
 @keyframes pulse-dot {
