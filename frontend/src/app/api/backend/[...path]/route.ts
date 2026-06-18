@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { logEvent, reportServerError, requestIdFromHeaders } from "@/lib/server-observability";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -17,64 +18,117 @@ type AuthPayload = {
   user: { role: string };
 };
 
+type ProxyLogContext = {
+  requestId: string;
+  method: string;
+  pathKey: string;
+  role: AdminRole | null;
+  country: string;
+  clientIp: string;
+  startedAt: number;
+};
+
 const backendBaseUrl = process.env.BACKEND_API_URL ?? "http://localhost:8080";
 const rateWindows = new Map<string, { count: number; resetAt: number }>();
 
 async function proxyToBackend(request: NextRequest, context: BackendRouteContext) {
   const { path } = await context.params;
   const pathKey = path.join("/");
-  const blocked = enforceEdgeSecurity(request, pathKey);
-  if (blocked) return blocked;
-
+  const startedAt = Date.now();
+  const requestId = requestIdFromHeaders(request.headers);
   const role = roleFromRequest(request);
-  if (pathKey === "auth/logout") {
-    return logoutResponse(role);
-  }
-
-  const targetUrl = new URL(`/api/v1/${pathKey}`, backendBaseUrl);
-  request.nextUrl.searchParams.forEach((value, key) => {
-    if (key !== "role") targetUrl.searchParams.append(key, value);
-  });
-
-  const headers = new Headers();
-  const bearer = request.headers.get("authorization") ?? accessTokenFromCookie(request, role);
-  const contentType = request.headers.get("content-type");
-
-  headers.set("accept", request.headers.get("accept") ?? "application/json");
-  if (bearer) headers.set("authorization", bearer.startsWith("Bearer ") ? bearer : `Bearer ${bearer}`);
-  if (contentType) headers.set("content-type", contentType);
-  headers.set("x-forwarded-for", clientIp(request));
-
   const country = countryCode(request);
-  if (country) headers.set("x-country-code", country);
-
-  const hasBody = !["GET", "HEAD"].includes(request.method);
-  const body = hasBody ? await request.arrayBuffer() : undefined;
-
-  const backendResponse = await fetch(targetUrl, {
+  const ip = clientIp(request);
+  const logContext = {
+    requestId,
     method: request.method,
-    headers,
-    body: body && body.byteLength > 0 ? body : undefined,
-    cache: "no-store",
+    pathKey,
+    role,
+    country,
+    clientIp: ip,
+    startedAt,
+  };
+
+  logEvent("info", {
+    event: "backend_proxy_start",
+    requestId,
+    method: request.method,
+    path: pathKey,
+    role,
+    country,
+    clientIp: ip,
   });
 
-  if (pathKey === "auth/login") {
-    return loginResponse(backendResponse, role);
+  try {
+    const blocked = enforceEdgeSecurity(request, pathKey);
+    if (blocked) return finalizeProxyResponse(blocked, logContext, "backend_proxy_blocked");
+
+    if (pathKey === "auth/logout") {
+      return finalizeProxyResponse(logoutResponse(role), logContext);
+    }
+
+    const targetUrl = new URL(`/api/v1/${pathKey}`, backendBaseUrl);
+    request.nextUrl.searchParams.forEach((value, key) => {
+      if (key !== "role") targetUrl.searchParams.append(key, value);
+    });
+
+    const headers = new Headers();
+    const bearer = request.headers.get("authorization") ?? accessTokenFromCookie(request, role);
+    const contentType = request.headers.get("content-type");
+
+    headers.set("accept", request.headers.get("accept") ?? "application/json");
+    headers.set("x-request-id", requestId);
+    if (bearer) headers.set("authorization", bearer.startsWith("Bearer ") ? bearer : `Bearer ${bearer}`);
+    if (contentType) headers.set("content-type", contentType);
+    headers.set("x-forwarded-for", ip);
+
+    if (country) headers.set("x-country-code", country);
+
+    const hasBody = !["GET", "HEAD"].includes(request.method);
+    const body = hasBody ? await request.arrayBuffer() : undefined;
+
+    const backendResponse = await fetch(targetUrl, {
+      method: request.method,
+      headers,
+      body: body && body.byteLength > 0 ? body : undefined,
+      cache: "no-store",
+    });
+
+    if (pathKey === "auth/login") {
+      return finalizeProxyResponse(await loginResponse(backendResponse, role), logContext);
+    }
+
+    if (backendResponse.status === 204) {
+      return finalizeProxyResponse(new NextResponse(null, { status: 204 }), logContext);
+    }
+
+    const responseHeaders = new Headers();
+    const responseContentType = backendResponse.headers.get("content-type");
+    if (responseContentType) responseHeaders.set("content-type", responseContentType);
+
+    const response = new NextResponse(backendResponse.body, {
+      status: backendResponse.status,
+      headers: responseHeaders,
+    });
+    return finalizeProxyResponse(response, logContext);
+  } catch (error) {
+    await reportServerError(error, {
+      event: "backend_proxy_failed",
+      requestId,
+      method: request.method,
+      path: pathKey,
+      role,
+      country,
+      clientIp: ip,
+      durationMs: Date.now() - startedAt,
+    });
+
+    return finalizeProxyResponse(
+      NextResponse.json({ message: "Backend unavailable", requestId }, { status: 502 }),
+      logContext,
+      "backend_proxy_failed_response",
+    );
   }
-
-  if (backendResponse.status === 204) {
-    return withSecurityHeaders(new NextResponse(null, { status: 204 }), pathKey, request);
-  }
-
-  const responseHeaders = new Headers();
-  const responseContentType = backendResponse.headers.get("content-type");
-  if (responseContentType) responseHeaders.set("content-type", responseContentType);
-
-  const response = new NextResponse(backendResponse.body, {
-    status: backendResponse.status,
-    headers: responseHeaders,
-  });
-  return withSecurityHeaders(response, pathKey, request);
 }
 
 async function loginResponse(backendResponse: Response, requestedRole: AdminRole | null) {
@@ -82,7 +136,11 @@ async function loginResponse(backendResponse: Response, requestedRole: AdminRole
   const payload = await backendResponse.json().catch(() => null);
 
   if (!backendResponse.ok || !payload) {
-    return NextResponse.json(payload ?? { message: "Login failed" }, { status: backendResponse.status });
+    return withSecurityHeaders(
+      NextResponse.json(payload ?? { message: "Login failed" }, { status: backendResponse.status }),
+      "auth/login",
+      null,
+    );
   }
 
   const auth = payload as AuthPayload;
@@ -158,7 +216,7 @@ function clearAuthCookies(response: NextResponse, role: AdminRole) {
   }
 }
 
-function withSecurityHeaders(response: NextResponse, pathKey: string, request: NextRequest | null) {
+function withSecurityHeaders(response: NextResponse, pathKey: string, request: { method: string } | null) {
   response.headers.set("x-content-type-options", "nosniff");
   response.headers.set("referrer-policy", "strict-origin-when-cross-origin");
 
@@ -170,6 +228,28 @@ function withSecurityHeaders(response: NextResponse, pathKey: string, request: N
   }
 
   return response;
+}
+
+function finalizeProxyResponse(response: NextResponse, context: ProxyLogContext, event = "backend_proxy_done") {
+  const responseWithHeaders = withSecurityHeaders(response, context.pathKey, {
+    method: context.method,
+  });
+  responseWithHeaders.headers.set("x-request-id", context.requestId);
+
+  const level = responseWithHeaders.status >= 500 ? "error" : responseWithHeaders.status >= 400 ? "warn" : "info";
+  logEvent(level, {
+    event,
+    requestId: context.requestId,
+    method: context.method,
+    path: context.pathKey,
+    role: context.role,
+    status: responseWithHeaders.status,
+    country: context.country,
+    clientIp: context.clientIp,
+    durationMs: Date.now() - context.startedAt,
+  });
+
+  return responseWithHeaders;
 }
 
 function enforceEdgeSecurity(request: NextRequest, pathKey: string) {
@@ -246,7 +326,7 @@ function accessTokenFromCookie(request: NextRequest, role: AdminRole | null) {
   return request.cookies.get(cookieName(role, "access"))?.value ?? null;
 }
 
-function roleFromRequest(request: NextRequest) {
+function roleFromRequest(request: NextRequest): AdminRole | null {
   const value = request.nextUrl.searchParams.get("role") ?? request.headers.get("x-tbilling-role");
   return value === "client" || value === "super" ? value : null;
 }

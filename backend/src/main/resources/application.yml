@@ -34,11 +34,24 @@ management:
   endpoints:
     web:
       exposure:
-        include: health,info,metrics
+        include: health,info,metrics,prometheus
   endpoint:
     health:
       probes:
         enabled: true
+      show-details: ${MANAGEMENT_HEALTH_SHOW_DETAILS:never}
+  info:
+    env:
+      enabled: true
+  metrics:
+    tags:
+      application: tbilling-backend
+
+info:
+  app:
+    name: tbilling-backend
+    version: 0.1.0
+    description: Multi-tenant WiFi billing backend
 
 logging:
   level:

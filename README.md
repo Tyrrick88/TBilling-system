@@ -56,6 +56,7 @@ Security/performance knobs:
 - Mirror the same values with `NEXT_RATE_LIMIT_*` and `NEXT_GEOFENCE_*` for the frontend proxy.
 - On Vercel, add Firewall rules for `/api/backend/auth/login` and `/api/backend/:path*` rate limiting, plus a country allowlist, so abusive traffic is stopped at the edge before it reaches the app.
 - See `docs/security-hardening.md` for deployment-ready Firewall rule templates.
+- See `docs/observability.md` for logs, metrics, uptime checks, and alert targets.
 
 Useful backend routes:
 
